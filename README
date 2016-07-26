@@ -1,0 +1,5 @@
+asub (alsa_subscribe)
+	asub is a program that prints the volume percentage when
+	the volume for a specific alsa mixer+card changes.
+
+	this is extremely handy for things like lemonbar and FIFO.
