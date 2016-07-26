@@ -76,6 +76,8 @@ void print_help() {
 		"\t                        text printed before volume\n"
 		"\t-n                    : print out volume regardless\n"
 		"\t                        of change\n"
+		"\t-i                    : print out volume upon startup\n"
+		"\t-h                    : help\n"
 	);
 }
 
@@ -86,9 +88,10 @@ int main(int argc, char** argv) {
 	char* opt_card = "default";
 	char* opt_prefix = "";
 	bool opt_continuous = false;
+	bool opt_initial = false;
 	long opt_precision = 100000;
 
-	while ((c = getopt(argc, argv, "hnm:c:p:f:")) != -1) {
+	while ((c = getopt(argc, argv, "hinm:c:p:f:")) != -1) {
 		switch (c) {
 		case 'm':
 			opt_mix_name = optarg;
@@ -101,6 +104,9 @@ int main(int argc, char** argv) {
 			break;
 		case 'f':
 			opt_prefix = optarg;
+			break;
+		case 'i':
+			opt_initial = true;
 			break;
 		case 'h':
 			print_help();
@@ -120,13 +126,15 @@ int main(int argc, char** argv) {
 		get_audio_volume(opt_mix_name, opt_card, &vol);
 		if (opt_continuous) {
 			printf("%s%lu\n", opt_prefix, vol);
+			fflush(stdout);
 		} else {
-			if (last_volume == -1) last_volume = vol;
+			if (last_volume == -1 && !opt_initial) last_volume = vol;
 
 			// this will evaluate to true
 			// when the volume has changed
 			if (last_volume != vol) {
 				printf("%s%lu\n", opt_prefix, vol);
+				fflush(stdout);
 				last_volume = vol;
 			}
 		}
