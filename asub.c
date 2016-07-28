@@ -1,50 +1,74 @@
+/*
+ * asub.c
+ *
+ * alsa volume monitor
+ */
+
+/* for proper usleep */
+#define _DEFAULT_SOURCE
+
+#include <alloca.h>
 #include <alsa/asoundlib.h>
-#include <unistd.h>
-#include <stdlib.h>
 #include <getopt.h>
-#include <stdio.h>
 #include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
 
-// originally from
-// http://stackoverflow.com/questions/7657624/get-master-sound-volume-in-c-in-linux
-int get_audio_volume(const char* mix_name, const char* card, long* outvol) {
+typedef struct {
+	const char* mix_name;
+	const char* card;
+	int mix_index;
+} MixSelect;
+
+static int get_audio_volume(MixSelect, long*);
+static void print_help();
+
+/*
+ * originally from
+ * stackoverflow.com/questions/7657624/get-master-sound-volume-in-c-in-linux
+ */
+static int get_audio_volume(MixSelect select, long* outvol) {
 	int ret = 0;
-
 	snd_mixer_t* handle;
 	snd_mixer_elem_t* elem;
 	snd_mixer_selem_id_t* sid;
-
-	static int mix_index = 0;
+	long minv, maxv;
 
 	snd_mixer_selem_id_alloca(&sid);
 
-	snd_mixer_selem_id_set_index(sid, mix_index);
-	snd_mixer_selem_id_set_name(sid, mix_name);
+	snd_mixer_selem_id_set_index(sid, select.mix_index);
+	snd_mixer_selem_id_set_name(sid, select.mix_name);
 
-	if ((snd_mixer_open(&handle, 0)) < 0)
+	if ((snd_mixer_open(&handle, 0)) < 0) {
 		return -1;
-	if ((snd_mixer_attach(handle, card)) < 0) {
+	}
+
+	if ((snd_mixer_attach(handle, select.card)) < 0) {
 		snd_mixer_close(handle);
 		return -2;
 	}
+
 	if ((snd_mixer_selem_register(handle, NULL, NULL)) < 0) {
 		snd_mixer_close(handle);
 		return -3;
 	}
+
 	ret = snd_mixer_load(handle);
+
 	if (ret < 0) {
 		snd_mixer_close(handle);
 		return -4;
 	}
+
 	elem = snd_mixer_find_selem(handle, sid);
+
 	if (!elem) {
 		snd_mixer_close(handle);
 		return -5;
 	}
 
-	long minv, maxv;
-
-	snd_mixer_selem_get_playback_volume_range (elem, &minv, &maxv);
+	snd_mixer_selem_get_playback_volume_range(elem, &minv, &maxv);
 
 	if(snd_mixer_selem_get_playback_volume(elem, 0, outvol) < 0) {
 		snd_mixer_close(handle);
@@ -61,8 +85,9 @@ int get_audio_volume(const char* mix_name, const char* card, long* outvol) {
 	return 0;
 }
 
-void print_help() {
-	printf("SYNOPSIS: asub [ -m mix | -c card | -p precision | -f prefix | -h ]\n"
+static void print_help() {
+	printf("SYNOPSIS: asub [ -m mix | -c card | -p precision | -f prefix"
+		"| -h ]\n"
 		"DESCRIPTION:\n"
 		"\tmonitors for changes in ALSA volume and reports them to stdout\n"
 		"\tby printing the new volume\n"
@@ -83,13 +108,16 @@ void print_help() {
 
 
 int main(int argc, char** argv) {
-	char c;
+	char  c;
+	long  last_volume = -1;
+	long  vol;
 	char* opt_mix_name = "Master";
 	char* opt_card = "default";
 	char* opt_prefix = "";
-	bool opt_continuous = false;
-	bool opt_initial = false;
-	long opt_precision = 100000;
+	bool  opt_continuous = false;
+	bool  opt_initial = false;
+	long  opt_precision = 100000;
+	MixSelect mix_select;
 
 	while ((c = getopt(argc, argv, "hinm:c:p:f:")) != -1) {
 		switch (c) {
@@ -119,19 +147,31 @@ int main(int argc, char** argv) {
 		}
 	}
 
-	long last_volume = -1;
-	long vol = 0;
+	mix_select = (MixSelect) {
+		.mix_name = opt_mix_name,
+		.card = opt_card,
+		.mix_index = 0
+	};
 
 	for (;;usleep(opt_precision)) {
-		get_audio_volume(opt_mix_name, opt_card, &vol);
+		get_audio_volume(mix_select, &vol);
+
+		/*
+		 * continuous: print out volume regardless
+		 * of volume change
+		 */
 		if (opt_continuous) {
 			printf("%s%lu\n", opt_prefix, vol);
 			fflush(stdout);
 		} else {
-			if (last_volume == -1 && !opt_initial) last_volume = vol;
+			if (last_volume == -1 && !opt_initial) {
+				last_volume = vol;
+			}
 
-			// this will evaluate to true
-			// when the volume has changed
+			/*
+			 * this will evaluate to true
+			 * when the volume has changed
+			 */
 			if (last_volume != vol) {
 				printf("%s%lu\n", opt_prefix, vol);
 				fflush(stdout);
